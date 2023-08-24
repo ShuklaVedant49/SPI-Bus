@@ -1,0 +1,234 @@
+class transaction;
+  rand bit new_data;
+  rand bit [11:0] din;
+  bit MOSI,c_select;
+  
+
+  function void display(input string tag);
+    $display("Random Stimuli generated");
+    $display("[%0s] new_data:%0d c_select:%0d din:%0d MOSI:%0d",tag,new_data,new_data,c_select,din,MOSI);
+  endfunction
+  
+  function transaction copy();
+    copy = new();
+    copy.new_data = this.new_data;
+    copy.din = this.din;
+    copy.c_select = this.c_select;
+    copy.MOSI = this.MOSI;
+  endfunction
+endclass
+//////////////////////////////////////////////////
+/////////////GENERATOR CLASS////////////////////////
+class generator;
+  
+  transaction tr;
+  mailbox #(transaction) mbx;
+  int count=0;
+  event drvnext;
+  event sconext;
+  event done;
+  
+  function new(mailbox#(transaction) mbx);
+    this.mbx=mbx;
+    tr=new();
+  endfunction
+  
+  task run();
+    repeat(count) begin
+      assert (tr.randomize()) else $error("Randomization Failed");
+      mbx.put(tr.copy);
+      tr.display("[GEN]");
+      ->done;
+    end
+  endtask
+endclass
+
+//////////////DRIVER Class
+class driver;
+  
+  transaction tr;
+  generator ge;
+  virtual SPI_if vif;
+  mailbox #(transaction) mbx;
+  mailbox #(transaction) mbxds;
+
+  event drvnext;
+  
+  function new(mailbox#(transaction) mbx);
+    this.mbx=mbx;
+  endfunction
+  
+  task reset();
+    vif.rst <= 1'b1;
+    vif.clk <= 1'b0;
+    vif.new_data <= 1'b0;
+    vif.c_select <= 1'b0;
+    vif.MOSI <= 1'b0;
+    
+    repeat(10) @(posedge vif.clk);
+       vif.rst <= 1'b0;
+    $display("[DRV] : RESET Done");
+  endtask
+  
+  task main();
+    forever begin
+      mbx.get(tr);
+      @(posedge vif.sclk);
+      ////////////////////
+      vif.new_data <= 1'b1;
+      vif.din <= tr.din;
+      //////////////////
+      mbxds.put(tr);
+
+      @(posedge vif.sclk);
+      vif.new_data<= 1'b0;
+      wait(vif.c_select==1'b1);
+      $display("[DRV] Data Transmission Done");
+      ->drvnext;
+    end
+  endtask
+endclass
+///////////////////////////////////////////
+class monitor;
+  transaction tr;
+  mailbox #(bit [11:0]) mbx;
+  bit [11:0] mon_data;
+  
+  function new(mailbox #(bit [11:0]) mbx);
+    this.mbx=mbx;
+  endfunction
+  
+  virtual SPI_if vif;
+  
+  task run();
+    forever begin
+      @(posedge vif.sclk);
+      wait (vif.c_select==1'b0);
+      
+      /////Now Getting all the data in locally created data container and will send it to scoreboard
+      @(posedge vif.clk);
+      
+      for (int i=0;i<11;i++)
+        begin
+          mon_data[i] <= vif.MOSI;
+        end
+      
+      //////To end the transaction we can simply make the chip select line high and NO Transaction
+      wait(vif.c_select==1'b1);
+      
+      $display("Monitor data is: %0d",mon_data);
+      mbx.put(mon_data);
+    end
+  endtask
+endclass
+///////////////////////////////////////////////////
+
+class scoreboard;
+  mailbox #(bit [11:0]) mbxds, mbxms;
+  bit [11:0] ds;
+  bit [11:0] ms;
+  event sconext;
+  
+  function new(mailbox #(bit [11:0]) mbxds, mailbox #(bit [11:0]) mbxms);
+    this.mbxds = mbxds;
+    this.mbxms = mbxms;
+  endfunction
+  
+  task run();
+    forever begin
+      
+      mbxds.get(ds);
+      mbxms.get(ms);
+      $display("[SCO] : DRV : %0d MON : %0d", ds, ms);
+      if(ds == ms)
+        $display("[SCO] : DATA MATCHED");
+      else
+        $display("[SCO] : DATA MISMATCHED");
+      ->sconext;     
+    end
+  endtask 
+endclass
+/////////////////////////////
+class environment;
+  transaction tr;
+  generator gr;
+  driver dr;
+  monitor mon;
+  scoreboard scr;
+  
+  ////Adding individual mailbox that is working between classeso internally
+  mailbox #(transaction) mbxgd; //Works between generator and driver
+  mailbox #(bit [11:0]) mbxds; //driver to monitor
+  mailbox #(bit [11:0]) mbxms; //monitor to scoreboard
+  
+  virtual SPI_if vif;
+  event nextgs;
+  event nextgd;
+  
+  function new(virtual SPI_if vif);
+    mbxgd=new();
+    mbxds=new();
+    mbxms=new();
+    gr=new(mbxgd);
+    mon = new(mbxms);
+    scr = new(mbxds, mbxms);
+    
+    //This is to connect interface 
+    this.vif = vif;
+    dr.vif = this.vif;
+    mon.vif = this.vif;
+    
+    gr.sconext = nextgs;
+    scr.sconext = nextgs;
+    
+    gr.drvnext = nextgd;
+    dr.drvnext = nextgd;
+  endfunction
+  
+  task test();
+    fork
+      gr.run();
+      dr.main();
+      mon.run();
+      scr.run();
+    join_any
+  endtask
+  
+  
+  task post_test();
+    //wait(gr.done.triggered);
+    $finish();
+  endtask
+  
+  task run();
+    test();
+    post_test();
+  endtask
+  
+endclass
+////////////////////////////////////////////////
+module test_bench;
+    
+  SPI_if vif();
+  
+  SPI_Design dut(vif.clk,vif.new_data,vif.rst,vif.din,vif.sclk,vif.c_select,vif.MOSI);
+    
+    initial begin
+      vif.clk <= 0;
+    end
+
+    always #10 vif.clk <= ~vif.clk;
+  
+    environment env;
+    
+    initial begin
+      env = new(vif);
+      env.gr.count = 20;
+      env.run();
+    end   
+    
+    initial begin
+      $dumpfile("dump.vcd");
+      $dumpvars;
+    end  
+endmodule
