@@ -1,0 +1,91 @@
+module SPI_Design (
+	input clk,rst,new_data,
+  	output reg sclk,c_select,MOSI,
+    input [11:0] din
+);
+  typedef enum bit [1:0] {
+    idle = 2'b00, 
+    enable = 2'b01, 
+    send = 2'b10, 
+    comp = 2'b11 } state_type;
+  
+  state_type state = idle;
+  logic countc =0;
+  logic count=0;
+  
+  always@(posedge clk)
+    if (rst == 1'b1) begin
+      sclk <=0;
+      countc<=0;
+    end
+    else begin
+      if (countc < 50)begin
+        countc <= countc+1;
+        sclk<=0;
+      end
+      else
+        begin
+          sclk<=sclk;
+          countc<=0;
+        end
+    end
+  
+  
+  //////////////State Machine////////////////////
+  reg [11:0] temp;
+  
+  always@(posedge sclk)
+    begin
+      if(rst==1'b1) begin
+        MOSI<=0;
+        c_select <=1'b1;
+    end
+      else begin
+        case(state)
+          idle:
+            begin
+              if (new_data == 1'b1) begin
+                c_select <= 1'b0;
+                state <= send;
+                temp<=din;
+              end
+              else begin
+                state<=idle;
+               temp<=8'h00;
+              end
+            end
+          
+          send: begin
+            if (count<=11) begin
+              MOSI <= temp[count];
+              count =count+1;
+            end
+            else 
+              begin
+                count<=0;
+                state<=idle;
+                c_select<=1'b1;
+                MOSI<=1'b0;
+              end
+          end
+          
+    default : state <= idle; 
+       
+   endcase
+  end 
+ end
+endmodule
+///////////////////////
+
+interface SPI_if; 
+  
+  logic clk;
+  logic new_data;
+  logic rst;
+  logic [11:0] din;
+  logic sclk;
+  logic c_select;
+  logic MOSI;
+  
+  
+endinterface
