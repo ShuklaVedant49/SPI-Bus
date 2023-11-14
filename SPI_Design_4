@@ -1,0 +1,419 @@
+//
+/module SPI_Master(run,din,s0,s1,ss_in_1,ss_in_2,mosi,sclk,ss1,ss2,ss3,ss4,miso,done,dout);
+  //Refer 
+  //All the input signals coming from microcontroller or SoC
+  input run;
+  input [0:7] din;
+  inout s0,s1;
+  input ss_in_1,ss_in_2;
+  
+  //These are input from Master
+  input sclk,mosi;
+  
+  //These are the 4 slaves
+  input ss1,ss2,ss3,ss4;
+  output reg miso;
+  output reg done=0;
+  output reg [0:7] dout= 1'b0; //Initial output will be High impedance value
+
+  //Inserting the things which requires to build an architecture
+  bit [0:7] data_register =0;
+  bit [0:7] ptr=0;
+  bit clk_in=0;
+  
+  //Generating clk
+  always #10 clk_in= ~clk_in;
+  
+  always @(posedge clk_in)
+    begin
+  
+      //If Run=0 data is equal to Data IN done is zero and will be selecting slave
+      if(!run)
+        begin
+          data_register =din;
+          done=0;
+          slave_select();
+        end
+      
+      //Will be selecting which mode out SPI master will work
+      else if (run && (!done))
+        begin
+          if ((s0==1'b0) && (s1==1'b0)) //+Ve Send & +Ve edge RCV
+            spi_operate_00();
+          else if ((s0==1'b0) && (s1==1'b1)) //+ve send -ve Rcv
+            spi_operate_01();
+          else if ((s0==1'b1) && (s1==1'b0))
+            spi_operate_10();
+          else if ((s0==1'b1) && (s1==1'b1))
+            spi_operate_11();
+          
+          ptr++;
+        end
+    end
+  
+  //Slave select logic for all 4 types of slaves
+  function void slave_select();
+    if((!ss_in_1) && (!ss_in_2))
+      begin
+        ss1=1;ss2=0;ss3=0;ss4=0;
+      end
+    else if((!ss_in_1) && (ss_in_2))
+      begin
+        ss1=0;ss2=1;ss3=0;ss4=0;
+      end
+    else if((ss_in_1) && (!ss_in_2))
+        begin
+          ss1=0;ss2=0;ss3=1;ss4=0;
+        end
+    else if((ss_in_1) && (ss_in_2))
+      begin
+        ss1=0;ss2=0;ss3=0;ss4=1;
+      end
+  endfunction
+  
+  //******************************************************************************
+  //* This task represents that whenever CPOL & CPHL is equal==0 means Positive edge for sending and
+  //positive
+  //edge for receiving then 00 Configuration will be used *//
+  task spi_operation_00();
+    
+    case(ptr)
+      //Upload Operation
+      0: begin
+        mosi = data_register[7];
+      end
+      
+      //Shift Operation
+      1: begin
+            //Right Shift data bit(0 or 1) by Signle place
+        	data_register= (data_register >>1);
+        	mosi = data_register[7];
+        	//This is data going back to master sended by slave
+        	data_register[0] = miso;
+         end
+      
+      2: begin
+        	data_register =(data_register >>1);
+        	mosi = data_register[7];
+        	data_register[0]=miso;
+         end
+      
+      3: begin
+        	data_register =(data_register >>1);
+        	mosi = data_register[7];
+        	data_register[0]=miso;
+         end
+      4: begin
+        	data_register =(data_register >>1);
+        	mosi = data_register[7];
+        	data_register[0]=miso;
+         end
+      5: begin
+        	data_register =(data_register >>1);
+        	mosi = data_register[7];
+        	data_register[0]=miso;
+         end
+      6: begin
+        	data_register =(data_register >>1);
+        	mosi = data_register[7];
+        	data_register[0]=miso;
+         end
+      7: begin
+        	data_register =(data_register >>1);
+        	mosi = data_register[7];
+        	data_register[0]=miso;
+         end
+      //No Transmission only Receiving
+      8: begin
+        	data_register =(data_register >>1);
+        	mosi = data_register[7];
+            dout =data_register;
+        	done=1;
+         end
+      
+      
+      default: begin
+      end
+    endcase  
+  endtask
+  
+  //The reason of not using for loop is because its uncontrollable and SPI is happening bit by bit.
+  //But with for loop in singlge edge everything will be 
+  
+  //*********************************************************************************
+  //Now performing for +Ve edge will send and -ve edga ewill receive the data
+  task spi_operation_01();
+    case(ptr)
+      
+      0:begin
+        mosi=data_register[7];
+      end
+      
+      /*At Positive edge(+ve) Transmission is done from master to slave but
+      at Negative edge Master wil receive the data from slave this is the logic
+      implemeted below for all*/
+      1:begin
+        //Data Shifted to right and transferred Master to Slave
+        //MOSI= Master out slave in
+        data_register=(data_register >>1);
+        mosi=data_register[7];
+        //AT -ve edge master will receive data from slave
+        //MISO: Master in slave out
+        @(negedge clk_in) begin
+          data_register[0]=miso;
+        end
+      end
+      
+      2:begin
+        data_register=(data_register >>1);
+        mosi=data_register[7];
+        @(negedge clk_in) begin
+          data_register[0]=miso;
+        end
+      end
+      
+      
+      3:begin
+        data_register=(data_register >>1);
+        mosi=data_register[7];
+        @(negedge clk_in) begin
+          data_register[0]=miso;
+        end
+      end
+      
+      4:begin
+        data_register=(data_register >>1);
+        mosi=data_register[7];
+        @(negedge clk_in) begin
+          data_register[0]=miso;
+        end
+      end
+      
+      5:begin
+        data_register=(data_register >>1);
+        mosi=data_register[7];
+        @(negedge clk_in) begin
+          data_register[0]=miso;
+        end
+      end
+      
+      6:begin
+        data_register=(data_register >>1);
+        mosi=data_register[7];
+        @(negedge clk_in) begin
+          data_register[0]=miso;
+        end
+      end
+      
+      7:begin
+        data_register=(data_register >>1);
+		mosi=data_register[7];
+        @(negedge clk_in) begin
+          data_register[0]=miso;
+        end
+      end
+      
+      8:begin
+        data_register=(data_register >>1);
+        mosi=data_register[7];
+        @(negedge clk_in) begin
+          data_register[0]=mosi;
+        end
+        done=1;
+      end
+      
+      default:begin
+      end   
+    endcase
+  endtask
+  
+  //******************************************************************
+  /*1: -ve for transissioN
+    0: +VE FOR RECEIVE */
+  task spi_operation_10();
+    case(ptr)
+      
+      0: begin
+        @(negedge clk_in) 
+        begin
+        	mosi=data_register[7];
+        end
+      end
+      
+      1: begin
+        data_register = (data_register >>1);
+        data_register[0]=mosi;
+        @(negedge clk_in)
+        begin
+          miso=data_register[7];
+        end
+      end
+      
+      2: begin
+        data_register = (data_register >>1);
+        data_register[0]=mosi;
+        @(negedge clk_in)
+        begin
+          miso=data_register[7];
+        end
+      end
+      
+      3: begin
+        data_register = (data_register >>1);
+        data_register[0]=mosi;
+        @(negedge clk_in)
+        begin
+          miso=data_register[7];
+        end
+      end
+      
+     4: begin
+        data_register = (data_register >>1);
+        data_register[0]=mosi;
+        @(negedge clk_in)
+        begin
+          miso=data_register[7];
+        end
+      end
+      
+     5: begin
+        data_register = (data_register >>1);
+        data_register[0]=mosi;
+        @(negedge clk_in)
+        begin
+          miso=data_register[7];
+        end
+      end
+      
+     6: begin
+        data_register = (data_register >>1);
+        data_register[0]=mosi;
+        @(negedge clk_in)
+        begin
+          miso=data_register[7];
+        end
+      end
+      
+     7: begin
+        data_register = (data_register >>1);
+        data_register[0]=mosi;
+        @(negedge clk_in)
+        begin
+          miso=data_register[7];
+        end
+      end
+        
+      8: begin
+        data_register = (data_register >>1);
+        data_register[0]=mosi;
+        @(negedge clk_in)
+        begin
+          miso=data_register[7];
+        end
+        done=1;
+      end
+      
+      default:
+        begin
+        end
+      
+    endcase
+  endtask
+  
+  /*1: -ve for transissioN
+    1: -VE FOR RECEIVE */
+  task spi_operation_11();
+    case(ptr)
+  
+      //Upload the data from Registers
+      0: begin
+        @(negedge clk_in)
+        begin
+          mosi=data_register[7];
+        end
+      end
+      
+      1:begin
+        @(negedge clk_in)
+        begin
+          data_register = (data_register >> 1);
+          mosi=data_register[0];
+          miso=data_register[7];
+        end
+      end
+      
+      2:begin
+        @(negedge clk_in)
+        begin
+          data_register = (data_register >> 1);
+          mosi=data_register[0];
+          miso=data_register[7];
+        end
+      end
+      
+      3:begin
+        @(negedge clk_in)
+        begin
+          data_register = (data_register >> 1);
+          mosi=data_register[0];
+          miso=data_register[7];
+        end
+      end
+      
+      4:begin
+        @(negedge clk_in)
+        begin
+          data_register = (data_register >> 1);
+          mosi=data_register[0];
+          miso=data_register[7];
+        end
+      end
+      
+      5:begin
+        @(negedge clk_in)
+        begin
+          data_register = (data_register >> 1);
+          mosi=data_register[0];
+          miso=data_register[7];
+        end
+      end
+      
+      6:begin
+        @(negedge clk_in)
+        begin
+          data_register = (data_register >> 1);
+          mosi=data_register[0];
+          miso=data_register[7];
+        end
+      end
+      
+      7:begin
+        @(negedge clk_in)
+        begin
+          data_register = (data_register >> 1);
+          mosi=data_register[0];
+          miso=data_register[7];
+        end
+      end
+      
+      8:begin
+        @(negedge clk_in)
+        begin
+          data_register = (data_register >> 1);
+          mosi=data_register[0];
+          done=1;
+          $display("ptr=%0d COMPLETED %b %d",ptr,dout,dout)
+        end
+      end
+      
+      default: begin
+      end
+      
+    endcase
+    
+  endtask
+  
+  //Assigned clock
+  assign sclk=clk_in;
+    
+endmodule
