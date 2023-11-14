@@ -7,7 +7,7 @@ What's Inside This Folder?
 -The design of SPI bus is made using Verilog,SystemVerilog
 2) SPI_TestBench
 -The meticulously crafted SystemVerilog test bench employs robust verification techniques, including constraint-based random verification and assertion-based verification, to thoroughly scrutinize the design under test and ensure its adherence to the design specifications.
-3) 3)SPI_Design_4
+3) SPI_Design_4
 -The master device in this design interacts with four separate slaves, each assigned a distinct address.
 
 
